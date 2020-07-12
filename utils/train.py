@@ -14,13 +14,13 @@ from .validation import validate
 
 
 def train(args, pt_dir, chkpt_path, trainloader, valloader, writer, logger, hp, hp_str):
-    model_g = Generator(hp.audio.n_mel_channels).cuda()
-    model_d = MultiScaleDiscriminator().cuda()
+    model_g = Generator(hp.audio.n_mel_channels).to(hp.device)
+    model_d = MultiScaleDiscriminator().to(hp.device)
 
     optim_g = torch.optim.Adam(model_g.parameters(),
-        lr=hp.train.adam.lr, betas=(hp.train.adam.beta1, hp.train.adam.beta2))
+                               lr=hp.train.adam.lr, betas=(hp.train.adam.beta1, hp.train.adam.beta2))
     optim_d = torch.optim.Adam(model_d.parameters(),
-        lr=hp.train.adam.lr, betas=(hp.train.adam.beta1, hp.train.adam.beta2))
+                               lr=hp.train.adam.lr, betas=(hp.train.adam.beta1, hp.train.adam.beta2))
 
     githash = get_commit_hash()
 
@@ -38,7 +38,8 @@ def train(args, pt_dir, chkpt_path, trainloader, valloader, writer, logger, hp, 
         init_epoch = checkpoint['epoch']
 
         if hp_str != checkpoint['hp_str']:
-            logger.warning("New hparams is different from checkpoint. Will use new.")
+            logger.warning(
+                "New hparams is different from checkpoint. Will use new.")
 
         if githash != checkpoint['githash']:
             logger.warning("Code might be different: git hash is different.")
@@ -57,15 +58,16 @@ def train(args, pt_dir, chkpt_path, trainloader, valloader, writer, logger, hp, 
         for epoch in itertools.count(init_epoch+1):
             if epoch % hp.log.validation_interval == 0:
                 with torch.no_grad():
-                    validate(hp, args, model_g, model_d, valloader, writer, step)
+                    validate(hp, args, model_g, model_d,
+                             valloader, writer, step)
 
             trainloader.dataset.shuffle_mapping()
             loader = tqdm.tqdm(trainloader, desc='Loading train data')
             for (melG, audioG), (melD, audioD) in loader:
-                melG = melG.cuda()
-                audioG = audioG.cuda()
-                melD = melD.cuda()
-                audioD = audioD.cuda()
+                melG = melG.to(hp.device)
+                audioG = audioG.to(hp.device)
+                melD = melD.to(hp.device)
+                audioD = audioD.to(hp.device)
 
                 # generator
                 optim_g.zero_grad()
@@ -74,9 +76,11 @@ def train(args, pt_dir, chkpt_path, trainloader, valloader, writer, logger, hp, 
                 disc_real = model_d(audioG)
                 loss_g = 0.0
                 for (feats_fake, score_fake), (feats_real, _) in zip(disc_fake, disc_real):
-                    loss_g += torch.mean(torch.sum(torch.pow(score_fake - 1.0, 2), dim=[1, 2]))
+                    loss_g += torch.mean(
+                        torch.sum(torch.pow(score_fake - 1.0, 2), dim=[1, 2]))
                     for feat_f, feat_r in zip(feats_fake, feats_real):
-                        loss_g += hp.model.feat_match * torch.mean(torch.abs(feat_f - feat_r))
+                        loss_g += hp.model.feat_match * \
+                            torch.mean(torch.abs(feat_f - feat_r))
 
                 loss_g.backward()
                 optim_g.step()
@@ -91,8 +95,10 @@ def train(args, pt_dir, chkpt_path, trainloader, valloader, writer, logger, hp, 
                     disc_real = model_d(audioD)
                     loss_d = 0.0
                     for (_, score_fake), (_, score_real) in zip(disc_fake, disc_real):
-                        loss_d += torch.mean(torch.sum(torch.pow(score_real - 1.0, 2), dim=[1, 2]))
-                        loss_d += torch.mean(torch.sum(torch.pow(score_fake, 2), dim=[1, 2]))
+                        loss_d += torch.mean(
+                            torch.sum(torch.pow(score_real - 1.0, 2), dim=[1, 2]))
+                        loss_d += torch.mean(
+                            torch.sum(torch.pow(score_fake, 2), dim=[1, 2]))
 
                     loss_d.backward()
                     optim_d.step()
@@ -104,16 +110,18 @@ def train(args, pt_dir, chkpt_path, trainloader, valloader, writer, logger, hp, 
                 loss_d_avg = loss_d_sum / hp.train.rep_discriminator
                 loss_d_avg = loss_d_avg.item()
                 if any([loss_g > 1e8, math.isnan(loss_g), loss_d_avg > 1e8, math.isnan(loss_d_avg)]):
-                    logger.error("loss_g %.01f loss_d_avg %.01f at step %d!" % (loss_g, loss_d_avg, step))
+                    logger.error("loss_g %.01f loss_d_avg %.01f at step %d!" % (
+                        loss_g, loss_d_avg, step))
                     raise Exception("Loss exploded")
 
                 if step % hp.log.summary_interval == 0:
                     writer.log_training(loss_g, loss_d_avg, step)
-                    loader.set_description("g %.04f d %.04f | step %d" % (loss_g, loss_d_avg, step))
+                    loader.set_description(
+                        "g %.04f d %.04f | step %d" % (loss_g, loss_d_avg, step))
 
             if epoch % hp.log.save_interval == 0:
                 save_path = os.path.join(pt_dir, '%s_%s_%04d.pt'
-                    % (args.name, githash, epoch))
+                                         % (args.name, githash, epoch))
                 torch.save({
                     'model_g': model_g.state_dict(),
                     'model_d': model_d.state_dict(),

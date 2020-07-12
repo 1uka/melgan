@@ -117,3 +117,6 @@ venv.bak/
 
 # mypy
 .mypy_cache/
+
+# MUSDB dataset with decoded WAVs and mels
+musdb/

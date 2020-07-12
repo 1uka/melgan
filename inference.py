@@ -18,7 +18,7 @@ def main(args):
     else:
         hp = load_hparam_str(checkpoint['hp_str'])
 
-    model = Generator(hp.audio.n_mel_channels).cuda()
+    model = Generator(hp.audio.n_mel_channels).to(hp.device)
     model.load_state_dict(checkpoint['model_g'])
     model.eval(inference=False)
 
@@ -27,12 +27,13 @@ def main(args):
             mel = torch.load(melpath)
             if len(mel.shape) == 2:
                 mel = mel.unsqueeze(0)
-            mel = mel.cuda()
+            mel = mel.to(hp.device)
 
             audio = model.inference(mel)
             audio = audio.cpu().detach().numpy()
 
-            out_path = melpath.replace('.mel', '_reconstructed_epoch%04d.wav' % checkpoint['epoch'])
+            out_path = melpath.replace(
+                '.mel', '_reconstructed_epoch%04d.wav' % checkpoint['epoch'])
             write(out_path, hp.audio.sampling_rate, audio)
 
 
